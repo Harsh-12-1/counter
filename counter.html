@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Click Counter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        /* Styles for the custom switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #f97316;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-r from-yellow-100 to-orange-200 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center space-y-6 transform transition-transform duration-300 hover:scale-105">
+
+        <!-- Dynamic Header Text -->
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-orange-600 tracking-wide" id="sessionTitle">
+            Jai Shree Krishna
+        </h1>
+
+        <!-- Counter Display for current session -->
+        <div class="text-7xl sm:text-8xl font-black text-slate-800 transition-all duration-200" id="counter">
+            0
+        </div>
+
+        <!-- Lifetime Clicks Display -->
+        <div class="text-lg text-slate-600">
+            Lifetime Clicks: <span id="lifetimeCounter">0</span>
+        </div>
+
+        <!-- Session Switch -->
+        <div class="flex items-center space-x-3">
+            <span class="text-sm font-semibold text-gray-700">Jai Shree Krishna</span>
+            <label class="switch">
+                <input type="checkbox" id="sessionSwitch">
+                <span class="slider"></span>
+            </label>
+            <span class="text-sm font-semibold text-gray-700">Click Counter</span>
+        </div>
+
+        <!-- Counter Button -->
+        <button id="counterButton" class="w-full sm:w-64 px-8 py-4 bg-orange-500 text-white font-bold text-xl rounded-full shadow-lg hover:bg-orange-600 transition-all duration-300 transform hover:scale-105 active:scale-95">
+            Click to Count!
+        </button>
+
+        <!-- Reset Button -->
+        <button id="resetButton" class="w-full sm:w-64 px-8 py-4 bg-gray-300 text-gray-800 font-bold text-xl rounded-full shadow-md hover:bg-gray-400 transition-all duration-300 transform hover:scale-105 active:scale-95">
+            Reset Session
+        </button>
+
+        <!-- User ID Display -->
+        <div class="text-xs text-gray-500 text-center mt-4">
+            Your User ID: <span id="userIdDisplay" class="font-mono break-all"></span>
+        </div>
+    </div>
+
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
+        // Set Firebase log level for debugging
+        setLogLevel('Debug');
+
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Get references to HTML elements
+        const sessionTitleElement = document.getElementById('sessionTitle');
+        const counterElement = document.getElementById('counter');
+        const lifetimeCounterElement = document.getElementById('lifetimeCounter');
+        const counterButton = document.getElementById('counterButton');
+        const resetButton = document.getElementById('resetButton');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const sessionSwitch = document.getElementById('sessionSwitch');
+
+        // Local state for the current session count and session type
+        let sessionCount = 0;
+        let currentSessionType = 'jaisk'; // 'jaisk' or 'counter'
+        let userId = null;
+        let dbDocRef = null;
+        let unsubscribe = null;
+
+        // Function to update the session counter display
+        function updateSessionCounterDisplay() {
+            counterElement.textContent = sessionCount;
+        }
+
+        // Function to set up the Firestore listener based on the current session type
+        function setupFirestoreListener() {
+            if (unsubscribe) {
+                unsubscribe(); // Unsubscribe from the old listener
+            }
+
+            const docId = currentSessionType === 'jaisk' ? 'lifetimeClicks-jaisk' : 'lifetimeClicks-counter';
+            const collectionPath = `/artifacts/${appId}/users/${userId}/clickHistory`;
+            dbDocRef = doc(db, collectionPath, docId);
+
+            unsubscribe = onSnapshot(dbDocRef, (docSnap) => {
+                const lifetimeCount = docSnap.exists() ? docSnap.data().clicks || 0 : 0;
+                lifetimeCounterElement.textContent = lifetimeCount;
+            }, (error) => {
+                console.error("Error listening to Firestore document:", error);
+            });
+        }
+
+        // Authenticate the user and set up the initial database listener
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdDisplay.textContent = userId;
+                setupFirestoreListener();
+            } else {
+                console.log("User is signed out.");
+                userId = null;
+                userIdDisplay.textContent = 'N/A';
+            }
+        });
+
+        // Sign in the user with the custom token or anonymously
+        if (initialAuthToken) {
+            signInWithCustomToken(auth, initialAuthToken).catch((error) => {
+                console.error("Error signing in with custom token:", error);
+                signInAnonymously(auth);
+            });
+        } else {
+            signInAnonymously(auth).catch((error) => {
+                console.error("Error signing in anonymously:", error);
+            });
+        }
+
+        // Function to increment the counter in the database
+        const incrementDatabaseCount = async () => {
+            if (dbDocRef) {
+                try {
+                    await setDoc(dbDocRef, {
+                        clicks: increment(1)
+                    }, { merge: true }); // Use setDoc with merge: true to create or update the document
+                } catch (error) {
+                    console.error("Error updating document in Firestore:", error);
+                }
+            }
+        };
+
+        // Event listener for the session switch toggle
+        sessionSwitch.addEventListener('change', (event) => {
+            currentSessionType = event.target.checked ? 'counter' : 'jaisk';
+            sessionTitleElement.textContent = event.target.checked ? 'Click Counter' : 'Jai Shree Krishna';
+            sessionCount = 0;
+            updateSessionCounterDisplay();
+
+            // Re-setup the Firestore listener for the new session
+            if (userId) {
+                setupFirestoreListener();
+            }
+        });
+
+        // Click event listener for the counter button
+        counterButton.addEventListener('click', () => {
+            sessionCount++;
+            updateSessionCounterDisplay();
+            incrementDatabaseCount();
+        });
+
+        // Click event listener for the reset button
+        resetButton.addEventListener('click', () => {
+            sessionCount = 0;
+            updateSessionCounterDisplay();
+        });
+
+        // Keyboard event listener for the spacebar
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                sessionCount++;
+                updateSessionCounterDisplay();
+                incrementDatabaseCount();
+            }
+        });
+
+        // Initial display update
+        updateSessionCounterDisplay();
+    </script>
+</body>
+</html>
