@@ -109,18 +109,23 @@
     <!-- Firebase SDK Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
         // Set Firebase log level for debugging
         setLogLevel('Debug');
 
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
+        // Your web app's Firebase configuration, provided by you.
+        const firebaseConfig = {
+            apiKey: "AIzaSyACHF9rDpzGmGTnG9fjGJsmzCaM2_wGdrc",
+            authDomain: "counter-def02.firebaseapp.com",
+            projectId: "counter-def02",
+            storageBucket: "counter-def02.firebasestorage.app",
+            messagingSenderId: "1096819776713",
+            appId: "1:1096819776713:web:0dff3c8736203e2d960118"
+        };
+        
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -154,7 +159,8 @@
             }
 
             const docId = currentSessionType === 'jaisk' ? 'lifetimeClicks-jaisk' : 'lifetimeClicks-counter';
-            const collectionPath = `/artifacts/${appId}/users/${userId}/clickHistory`;
+            // The collection path is now simpler since we are not using the canvas app ID.
+            const collectionPath = `users/${userId}/clickHistory`;
             dbDocRef = doc(db, collectionPath, docId);
 
             unsubscribe = onSnapshot(dbDocRef, (docSnap) => {
@@ -166,7 +172,7 @@
         }
 
         // Authenticate the user and set up the initial database listener
-        onAuthStateChanged(auth, async (user) => {
+        onAuthStateChanged(auth, (user) => {
             if (user) {
                 userId = user.uid;
                 userIdDisplay.textContent = userId;
@@ -178,17 +184,10 @@
             }
         });
 
-        // Sign in the user with the custom token or anonymously
-        if (initialAuthToken) {
-            signInWithCustomToken(auth, initialAuthToken).catch((error) => {
-                console.error("Error signing in with custom token:", error);
-                signInAnonymously(auth);
-            });
-        } else {
-            signInAnonymously(auth).catch((error) => {
-                console.error("Error signing in anonymously:", error);
-            });
-        }
+        // Sign in the user anonymously since no custom token is available in a self-hosted environment.
+        signInAnonymously(auth).catch((error) => {
+            console.error("Error signing in anonymously:", error);
+        });
 
         // Function to increment the counter in the database
         const incrementDatabaseCount = async () => {
